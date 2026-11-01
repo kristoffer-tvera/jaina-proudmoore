@@ -17,7 +17,8 @@ the latest `master` commit. The `Dockerfile` lives in the `JainaProudmoore`
 subdirectory, so the build context is set with the `:JainaProudmoore` suffix:
 
 ```bash
-docker build --pull -t jaina-proudmoore https://github.com/kristoffer-tvera/JainaProudmoore.git#master:JainaProudmoore
+rm -rf /tmp/jaina && git clone --depth 1 -b master git@github.com:kristoffer-tvera/jaina-proudmoore.git /tmp/jaina
+docker build --pull -t jaina-proudmoore /tmp/jaina/JainaProudmoore
 ```
 
 This builds the checked-in source on `master`; unpushed local changes are not
