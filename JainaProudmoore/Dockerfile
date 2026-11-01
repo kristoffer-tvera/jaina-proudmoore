@@ -8,16 +8,17 @@ WORKDIR /app
 # P/Invoke asks the loader for the UNVERSIONED names (libopus.so, libsodium.so), which
 # normally exist only in the -dev packages. Create those symlinks so the loader resolves
 # them at runtime without pulling in dev headers.
-RUN apt-get update \
+RUN set -eux \
+    && apt-get update \
     && apt-get install -y --no-install-recommends libopus0 ffmpeg \
     && ( apt-get install -y --no-install-recommends libsodium23 \
       || apt-get install -y --no-install-recommends libsodium26 \
       || apt-get install -y --no-install-recommends 'libsodium*' ) \
     && rm -rf /var/lib/apt/lists/* \
-    && opus_lib="$(find / -name 'libopus.so.*' -print -quit)" \
-    && [ -n "$opus_lib" ] && ln -sf "$opus_lib" "$(dirname "$opus_lib")/libopus.so" \
-    && sodium_lib="$(find / -name 'libsodium.so.*' -print -quit)" \
-    && [ -n "$sodium_lib" ] && ln -sf "$sodium_lib" "$(dirname "$sodium_lib")/libsodium.so" \
+    && for name in libopus libsodium; do \
+         lib="$(find / -name "$name.so.*" -type f 2>/dev/null | head -n1)"; \
+         if [ -n "$lib" ]; then ln -sf "$lib" "$(dirname "$lib")/$name.so"; fi; \
+       done \
     && ldconfig
 USER $APP_UID
 
