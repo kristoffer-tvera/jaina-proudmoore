@@ -1,0 +1,5 @@
+# DAVE-PR-3288: the patch must stay LF so `git apply` works inside the Linux
+# Docker build against the LF-checked-out Discord.Net 3.20.2 clone, regardless of
+# the host's core.autocrlf setting.
+dave-pr-3288.patch text eol=lf
+NuGet.config text eol=lf

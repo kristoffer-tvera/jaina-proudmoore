@@ -1,0 +1,50 @@
+diff --git a/src/Discord.Net.WebSocket/Audio/DaveSessionManager.cs b/src/Discord.Net.WebSocket/Audio/DaveSessionManager.cs
+index 0b4157ca20..3bbd14b211 100644
+--- a/src/Discord.Net.WebSocket/Audio/DaveSessionManager.cs
++++ b/src/Discord.Net.WebSocket/Audio/DaveSessionManager.cs
+@@ -139,7 +139,8 @@ private async ValueTask OnMLSWelcomeAsync(
+         ReadOnlyMemory<byte> payload
+     )
+     {
+-        using var welcomeResult = _session.ProcessWelcome(payload, _decryptors.Keys);
++        // libdave verifies every roster member of the welcome, including ourselves
++        using var welcomeResult = _session.ProcessWelcome(payload, GetRecognizedUserIds());
+ 
+         if (welcomeResult.IsNull)
+         {
+@@ -152,6 +153,9 @@ ReadOnlyMemory<byte> payload
+         }
+     }
+ 
++    private HashSet<ulong> GetRecognizedUserIds()
++        => [.._decryptors.Keys, SelfUserId];
++
+     private async Task OnMLSExternalSenderAsync(ReadOnlyMemory<byte> payload)
+     {
+         await _logger.DebugAsync("Handling external sender package");
+@@ -170,7 +174,7 @@ await _logger.DebugAsync(
+ 
+         using var result = _session.ProcessProposals(
+             payload,
+-            _decryptors.Keys
++            GetRecognizedUserIds()
+         );
+ 
+         await _logger.DebugAsync($"Processed dave MLS proposals, has data?: {result.HasData}");
+diff --git a/tools/Discord.Net.Dave/Utils.cs b/tools/Discord.Net.Dave/Utils.cs
+index 59a14530b3..4e747e8682 100644
+--- a/tools/Discord.Net.Dave/Utils.cs
++++ b/tools/Discord.Net.Dave/Utils.cs
+@@ -25,9 +25,11 @@ public static unsafe AllocHandle ToCString(ulong id, out ReadOnlySpan<byte> str)
+         var ptr = (byte*)NativeMemory.Alloc(SnowflakeMaxCStringLength);
+         var span = new Span<byte>(ptr, SnowflakeMaxCStringLength);
+ 
+-        if (!id.TryFormat(span, out var sz))
++        // reserve the last byte for the null terminator; libdave reads these as C strings
++        if (!id.TryFormat(span[..^1], out var sz))
+             throw new InvalidOperationException();
+ 
++        span[sz] = 0;
+         str = new(ptr, sz);
+ 
+         return new((IntPtr)ptr);
