@@ -64,17 +64,30 @@ COPY patches/dave-pr-3288.patch /tmp/dave-pr-3288.patch
 RUN git apply --check /tmp/dave-pr-3288.patch && git apply /tmp/dave-pr-3288.patch
 # Pack every Discord.Net component the app pulls in (directly or transitively via the
 # Discord.Net metapackage) at the stock 3.20.2 version into /packages. IsTagBuild=true
-# strips the -dev VersionSuffix so the packages are exactly 3.20.2. NU1510 is suppressed
-# only on Discord.Net.Core (the newer SDK prunes System.Linq.AsyncEnumerable and the
-# project's own TreatWarningsAsErrors would otherwise fail the pack); all other projects
-# pack with their stock warning settings untouched.
-RUN dotnet pack src/Discord.Net.Core/Discord.Net.Core.csproj                 -c Release /p:IsTagBuild=true /p:NoWarn=NU1510 -o /packages \
-    && dotnet pack src/Discord.Net.Rest/Discord.Net.Rest.csproj              -c Release /p:IsTagBuild=true -o /packages \
-    && dotnet pack tools/Discord.Net.Dave/Discord.Net.Dave.csproj            -c Release /p:IsTagBuild=true -o /packages \
-    && dotnet pack src/Discord.Net.WebSocket/Discord.Net.WebSocket.csproj    -c Release /p:IsTagBuild=true -o /packages \
-    && dotnet pack src/Discord.Net.Commands/Discord.Net.Commands.csproj      -c Release /p:IsTagBuild=true -o /packages \
-    && dotnet pack src/Discord.Net.Webhook/Discord.Net.Webhook.csproj        -c Release /p:IsTagBuild=true -o /packages \
-    && dotnet pack src/Discord.Net.Interactions/Discord.Net.Interactions.csproj -c Release /p:IsTagBuild=true -o /packages
+# strips the -dev VersionSuffix so the packages are exactly 3.20.2.
+#
+# Discord.Net's projects set GenerateDocumentationFile + TreatWarningsAsErrors, so a missing
+# XML doc-comment (CS1591) is promoted to an error and fails the pack. The newer .NET 10 SDK
+# also prunes some implicit framework packages, raising NU1510. Neither matters for a throwaway
+# from-source build whose only purpose is to compile PR #3288's two-line DAVE fix: we are not
+# shipping these as documented public packages. So we disable TreatWarningsAsErrors and silence
+# the doc/restore warnings for the pack. This affects ONLY this temporary Discord.Net build;
+# the app's own -warnaserror settings are untouched.
+RUN set -eux \
+    && for proj in \
+         src/Discord.Net.Core/Discord.Net.Core.csproj \
+         src/Discord.Net.Rest/Discord.Net.Rest.csproj \
+         tools/Discord.Net.Dave/Discord.Net.Dave.csproj \
+         src/Discord.Net.WebSocket/Discord.Net.WebSocket.csproj \
+         src/Discord.Net.Commands/Discord.Net.Commands.csproj \
+         src/Discord.Net.Webhook/Discord.Net.Webhook.csproj \
+         src/Discord.Net.Interactions/Discord.Net.Interactions.csproj ; do \
+       dotnet pack "$proj" -c Release \
+         /p:IsTagBuild=true \
+         /p:TreatWarningsAsErrors=false \
+         /p:NoWarn="CS1591;NU1510" \
+         -o /packages ; \
+     done
 # ==== DAVE-PR-3288 END ======================================================
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
