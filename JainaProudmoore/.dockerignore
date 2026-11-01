@@ -1,0 +1,11 @@
+**/bin
+**/obj
+**/.vs
+**/.git
+**/*.user
+**/*.env
+**/.env*
+**/Properties/PublishProfiles
+**/*.log
+docker-compose*
+Dockerfile*
