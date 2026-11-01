@@ -18,16 +18,20 @@ downloads a pinned prebuilt `libdave.so` and the bot sets
 `EnableVoiceDaveEncryption = true`; without both, voice connections are rejected
 with gateway close code `4017`.
 
-> **Temporary: patched Discord.Net (PR #3288).** The image currently builds
-> Discord.Net **from source** at the pinned `3.20.2` tag with approved-but-unmerged
-> [PR #3288](https://github.com/discord-net/Discord.Net/pull/3288) applied, because
-> stock Discord.Net 3.20.2 fails the DAVE MLS welcome and `/askjaina` plays no
-> audio. This adds a dedicated `discordnet` build stage to the Dockerfile and a
-> local NuGet feed; the app's package reference is unchanged. It is **temporary**,
-> pending an upstream Discord.Net release that ships the fix. Everything is marked
-> with the greppable comment `DAVE-PR-3288`. See
-> [`JainaProudmoore/patches/README.md`](JainaProudmoore/patches/README.md) for what
-> it is and the one-step cleanup. Because the build now clones Discord.Net from
+> **Temporary: patched Discord.Net (dev @ `bf159d41` + PR #3288).** The image
+> currently builds Discord.Net **from source** at a pinned `dev`-branch commit
+> (`bf159d412bb113a52354f73d9def4e5d540ba7fd`) with approved-but-unmerged
+> [PR #3288](https://github.com/discord-net/Discord.Net/pull/3288) applied on top.
+> We build from `dev` (not the `3.20.2` release tag) because `dev` carries a batch of
+> DAVE voice fixes (RTP padding #3263, multi-user voice fixes, etc.) that the 3.20.2
+> release lacks, and `/askjaina` otherwise joins but is torn down ~7s in and/or plays
+> no audio with 2+ users present. PR #3288 is still open / not merged into `dev`, so
+> its patch is still required. This adds a dedicated `discordnet` build stage to the
+> Dockerfile and a local NuGet feed (packed at `3.20.2`); the app's package reference
+> is unchanged. It is **temporary**, pending an upstream Discord.Net release that
+> ships these fixes. Everything is marked with the greppable comment `DAVE-PR-3288`.
+> See [`JainaProudmoore/patches/README.md`](JainaProudmoore/patches/README.md) for
+> what it is and the one-step cleanup. Because the build clones Discord.Net from
 > GitHub, the build host needs outbound HTTPS to github.com (it already does for the
 > libdave fetch).
 

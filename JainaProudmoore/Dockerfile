@@ -41,15 +41,21 @@ RUN set -eux \
 USER $APP_UID
 
 # ==== DAVE-PR-3288 BEGIN (from-source Discord.Net build) ====================
-# TEMPORARY: builds Discord.Net from source at the pinned 3.20.2 release tag with
+# TEMPORARY: builds Discord.Net from source at a PINNED dev-branch commit with
 # approved-but-unmerged PR #3288 applied, so /askjaina DAVE voice actually works.
-#   PR:    https://github.com/discord-net/Discord.Net/pull/3288
-#   Tag:   3.20.2  (commit be2c8de62d27e38c4e886c209eb1fd9fe4fca1f4)
+# We build from dev (not the 3.20.2 release tag) because dev carries a batch of DAVE
+# voice fixes absent from 3.20.2 (RTP padding #3263, multi-user voice fixes, etc.)
+# that are needed for the /askjaina teardown + silent-audio-with-2+-users symptoms.
+# PR #3288 (the welcome-roster / null-terminator fix) is STILL open and NOT merged
+# into dev, so its patch is still required and is applied on top of the dev checkout.
+#   PR:   https://github.com/discord-net/Discord.Net/pull/3288
+#   dev:  commit bf159d412bb113a52354f73d9def4e5d540ba7fd (pinned; dated 2026-10-26)
 #   Patch: patches/dave-pr-3288.patch (9-line, two-file delta; see patches/README.md)
-# The patched component packages are packed at version 3.20.2 into a local feed so
-# the app's unchanged `<PackageReference Include="Discord.Net" Version="3.20.2" />`
-# resolves the patched Discord.Net.WebSocket / Discord.Net.Dave assemblies locally
-# while the Discord.Net metapackage shell still comes from nuget.org.
+# dev still declares VersionPrefix 3.20.2, so with IsTagBuild=true the components pack
+# at exactly 3.20.2 and the app's unchanged
+# `<PackageReference Include="Discord.Net" Version="3.20.2" />` resolves the patched
+# Discord.Net.WebSocket / Discord.Net.Dave assemblies locally while the Discord.Net
+# metapackage shell still comes from nuget.org.
 # CLEANUP once upstream ships the fix: `grep DAVE-PR-3288` and delete these blocks,
 # then delete patches/. Nothing else in this Dockerfile depends on this stage.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS discordnet
@@ -57,14 +63,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /dnet
-# Clone the pinned 3.20.2 tag, verify we are on the expected commit, then apply the PR.
-RUN git clone --depth 1 --branch 3.20.2 https://github.com/discord-net/Discord.Net.git . \
-    && test "$(git rev-parse HEAD)" = "be2c8de62d27e38c4e886c209eb1fd9fe4fca1f4"
+# Clone the dev branch and check out the PINNED commit (not the moving dev HEAD),
+# verify we are on the expected commit, then apply the PR.
+RUN git clone --branch dev https://github.com/discord-net/Discord.Net.git . \
+    && git checkout bf159d412bb113a52354f73d9def4e5d540ba7fd \
+    && test "$(git rev-parse HEAD)" = "bf159d412bb113a52354f73d9def4e5d540ba7fd"
 COPY patches/dave-pr-3288.patch /tmp/dave-pr-3288.patch
 RUN git apply --check /tmp/dave-pr-3288.patch && git apply /tmp/dave-pr-3288.patch
 # Pack every Discord.Net component the app pulls in (directly or transitively via the
-# Discord.Net metapackage) at the stock 3.20.2 version into /packages. IsTagBuild=true
-# strips the -dev VersionSuffix so the packages are exactly 3.20.2.
+# Discord.Net metapackage) at version 3.20.2 into /packages. dev's VersionPrefix is
+# still 3.20.2, and IsTagBuild=true strips the -dev VersionSuffix so the packages are
+# exactly 3.20.2 (matching the app's unchanged PackageReference).
 #
 # Discord.Net's projects set GenerateDocumentationFile + TreatWarningsAsErrors, so a missing
 # XML doc-comment (CS1591) is promoted to an error and fails the pack. The newer .NET 10 SDK
