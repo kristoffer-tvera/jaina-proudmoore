@@ -75,6 +75,13 @@ RUN git init -q . \
     && test "$(git rev-parse HEAD)" = "bf159d412bb113a52354f73d9def4e5d540ba7fd"
 COPY patches/dave-pr-3288.patch /tmp/dave-pr-3288.patch
 RUN git apply --check /tmp/dave-pr-3288.patch && git apply /tmp/dave-pr-3288.patch
+# DAVE-PR-3288: second local patch — the FinishConnectAudio same-session guard that
+# stops the benign second VOICE_SERVER_UPDATE from tearing down the already-Connected
+# AudioClient (the ~7s /askjaina drop). Disjoint files/hunks from dave-pr-3288.patch
+# (AudioClient.cs + SocketGuild.cs vs DaveSessionManager.cs + Utils.cs), so it applies
+# cleanly on top. See patches/README.md.
+COPY patches/dave-finishconnectaudio-guard.patch /tmp/dave-finishconnectaudio-guard.patch
+RUN git apply --check /tmp/dave-finishconnectaudio-guard.patch && git apply /tmp/dave-finishconnectaudio-guard.patch
 # Pack every Discord.Net component the app pulls in (directly or transitively via the
 # Discord.Net metapackage) at version 3.20.2 into /packages. dev's VersionPrefix is
 # still 3.20.2, and IsTagBuild=true strips the -dev VersionSuffix so the packages are

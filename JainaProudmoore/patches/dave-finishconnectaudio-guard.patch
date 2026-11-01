@@ -1,0 +1,63 @@
+diff --git a/src/Discord.Net.WebSocket/Audio/AudioClient.cs b/src/Discord.Net.WebSocket/Audio/AudioClient.cs
+--- a/src/Discord.Net.WebSocket/Audio/AudioClient.cs
++++ b/src/Discord.Net.WebSocket/Audio/AudioClient.cs
+@@ -66,6 +66,12 @@ namespace Discord.Audio
+         internal byte[] SecretKey { get; private set; }
+         internal bool IsFinished { get; private set; }
+ 
++        // Read-only view of the endpoint/token this client was last started with, so
++        // SocketGuild.FinishConnectAudio can skip a destructive restart on a benign
++        // duplicate VOICE_SERVER_UPDATE for the same session. See patches/README.md.
++        internal string CurrentEndpoint => _url;
++        internal string CurrentToken => _token;
++
+         internal DiscordSocketClient Discord => Guild.Discord;
+         public ConnectionState ConnectionState => _connection.State;
+ 
+diff --git a/src/Discord.Net.WebSocket/Entities/Guilds/SocketGuild.cs b/src/Discord.Net.WebSocket/Entities/Guilds/SocketGuild.cs
+--- a/src/Discord.Net.WebSocket/Entities/Guilds/SocketGuild.cs
++++ b/src/Discord.Net.WebSocket/Entities/Guilds/SocketGuild.cs
+@@ -1917,21 +1917,33 @@ namespace Discord.WebSocket
+                 {
+                     await RepopulateAudioStreamsAsync().ConfigureAwait(false);
+ 
+-                    if (_audioClient.ConnectionState != ConnectionState.Disconnected)
++                    // A duplicate/benign VOICE_SERVER_UPDATE for the SAME endpoint+token on an
++                    // already-Connected client must NOT tear down the live connection. Only a genuine
++                    // endpoint/token change (region handoff) or a client already heading to Disconnected
++                    // (channel move via StopReason.Moved, network drop) should restart.
++                    var sameSession =
++                        _audioClient.ConnectionState == ConnectionState.Connected &&
++                        url == _audioClient.CurrentEndpoint &&
++                        token == _audioClient.CurrentToken;
++
++                    if (!sameSession)
+                     {
+-                        try
+-                        {
+-                            await _audioClient.WaitForDisconnectAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+-                        }
+-                        catch (TimeoutException)
++                        if (_audioClient.ConnectionState != ConnectionState.Disconnected)
+                         {
+-                            await Discord.LogManager.WarningAsync("Failed to wait for disconnect audio client in time", null).ConfigureAwait(false);
++                            try
++                            {
++                                await _audioClient.WaitForDisconnectAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
++                            }
++                            catch (TimeoutException)
++                            {
++                                await Discord.LogManager.WarningAsync("Failed to wait for disconnect audio client in time", null).ConfigureAwait(false);
++                            }
+                         }
+-                    }
+ 
+-                    await Task.Delay(TimeSpan.FromMilliseconds(5)).ConfigureAwait(false);
++                        await Task.Delay(TimeSpan.FromMilliseconds(5)).ConfigureAwait(false);
+ 
+-                    await _audioClient.StartAsync(url, Discord.CurrentUser.Id, voiceState.VoiceSessionId, token).ConfigureAwait(false);
++                        await _audioClient.StartAsync(url, Discord.CurrentUser.Id, voiceState.VoiceSessionId, token).ConfigureAwait(false);
++                    }
+                 }
+             }
+             catch (OperationCanceledException)
