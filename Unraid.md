@@ -7,14 +7,45 @@ Docker tab. Nothing is pushed to a registry.
 The bot provides role toggling (`/ilovechinesewomen`), voice-channel moves
 (`/yoink`), cached message edit/delete auditing, and the optional `/askjaina`
 Gemini voice command (answers aloud in your voice channel; requires a Gemini API
-key). The native deps `/askjaina` needs (ffmpeg, libopus, libsodium) are baked into
-the image by the Dockerfile, so no extra Unraid configuration is required for them.
+key). The native deps `/askjaina` needs (ffmpeg, libopus, libsodium, and the DAVE
+E2EE library `libdave.so`) are baked into the image by the Dockerfile, so no extra
+Unraid configuration is required for them.
+
+Because the repo is **private**, the build clones over SSH; set up a deploy key on
+the Unraid host first (see "SSH deploy key" below). Discord also enforces its DAVE
+end-to-end-encryption protocol for voice (since 2026-03-01), so the Dockerfile
+downloads a pinned prebuilt `libdave.so` and the bot sets
+`EnableVoiceDaveEncryption = true`; without both, voice connections are rejected
+with gateway close code `4017`.
+
+## 0. SSH deploy key (one-time, private repo)
+
+The repo is private, so the build must authenticate to GitHub. Unraid rebuilds
+`/root` on every boot, so persist the key on the flash drive and restore it at boot.
+
+1. Generate a key and print the public half:
+
+   ```bash
+   mkdir -p /boot/config/ssh
+   ssh-keygen -t ed25519 -C "jaina-unraid-deploy" -f /boot/config/ssh/id_ed25519 -N ""
+   cat /boot/config/ssh/id_ed25519.pub
+   ```
+
+2. Add the printed public key to the repo on GitHub under
+   **Settings -> Deploy keys -> Add deploy key** (read-only access is enough).
+
+
+4. Verify: `ssh -T git@github.com` should report successful authentication.
 
 ## 1. Build the Image via SSH
 
 Push the changes you want to deploy, then SSH into Unraid and build the worker from
-the latest `master` commit. The `Dockerfile` lives in the `JainaProudmoore`
-subdirectory, so the build context is set with the `:JainaProudmoore` suffix:
+the latest `master` commit. Clone first, then build from the local path. Passing the
+git URL straight to `docker build` fails under BuildKit: the HTTPS URL has no
+credentials for the private repo, and the `git@` URL needs an SSH agent socket that
+isn't present. Cloning on the host uses the deploy key directly, and Docker only
+sees local files. The `Dockerfile` lives in the `JainaProudmoore` subdirectory, so
+that subdirectory is the build context:
 
 ```bash
 rm -rf /tmp/jaina && git clone --depth 1 -b master git@github.com:kristoffer-tvera/jaina-proudmoore.git /tmp/jaina

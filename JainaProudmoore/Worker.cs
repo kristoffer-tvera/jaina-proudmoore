@@ -26,6 +26,10 @@ public sealed class Worker : BackgroundService
             {
                 GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent,
                 MessageCacheSize = 1024,
+                // Discord enforces the DAVE (E2EE) protocol for voice as of 2026-03-01; without
+                // it the voice gateway closes with 4017. Discord.Net negotiates DAVE when this is
+                // enabled AND the native libdave.so is resolvable at runtime (see Dockerfile).
+                EnableVoiceDaveEncryption = true,
             }
         );
         _client.Log += ClientLog;
