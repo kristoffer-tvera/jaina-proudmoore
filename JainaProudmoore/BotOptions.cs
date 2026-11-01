@@ -10,8 +10,17 @@ public sealed class BotOptions
 
     public string GeminiApiKey { get; set; } = string.Empty;
     public string GeminiVoice { get; set; } = "Kore";
+
+    // Text models tried in order: primary, then fallback 1, then fallback 2. Rate limits are
+    // per-model, so when the primary is throttled the fallbacks can still answer.
     public string GeminiTextModel { get; set; } = GeminiDefaults.TextModel;
+    public string GeminiTextModelFallback1 { get; set; } = GeminiDefaults.TextModelFallback1;
+    public string GeminiTextModelFallback2 { get; set; } = GeminiDefaults.TextModelFallback2;
+
+    // TTS models tried in the same primary -> fallback 1 -> fallback 2 order.
     public string GeminiTtsModel { get; set; } = GeminiDefaults.TtsModel;
+    public string GeminiTtsModelFallback1 { get; set; } = GeminiDefaults.TtsModelFallback1;
+    public string GeminiTtsModelFallback2 { get; set; } = GeminiDefaults.TtsModelFallback2;
     public string GeminiPersonaPrompt { get; set; } =
         "You are Jaina Proudmoore from World of Warcraft. Answer in character - "
         + "poised, intelligent, a touch wry. Keep answers to at most 2-3 short sentences.";

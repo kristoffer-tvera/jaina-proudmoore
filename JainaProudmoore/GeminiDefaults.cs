@@ -14,13 +14,17 @@ public static class GeminiDefaults
     /// Default stable text model id. Known-real and config-overridable via
     /// <c>Bot:GeminiTextModel</c>.
     /// </summary>
-    public const string TextModel = "gemini-2.5-flash";
+    public const string TextModel = "gemini-3.8-flash";
+    public const string TextModelFallback1 = "gemini-3.6-flash";
+    public const string TextModelFallback2 = "gemini-3.5-flash-lite";
 
     /// <summary>
     /// Default stable TTS model id. Known-real and config-overridable via
     /// <c>Bot:GeminiTtsModel</c>.
     /// </summary>
-    public const string TtsModel = "gemini-2.5-flash-preview-tts";
+    public const string TtsModel = "gemini-3.8-flash-tts";
+    public const string TtsModelFallback1 = "gemini-3.8-flash-lite-tts";
+    public const string TtsModelFallback2 = "gemini-3.1-flash-tts";
 
     /// <summary>
     /// Opt-in text model id advertised by the current live docs. This is an ASSUMPTION /

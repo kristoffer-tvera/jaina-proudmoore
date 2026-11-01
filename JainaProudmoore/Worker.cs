@@ -328,27 +328,31 @@ public sealed class Worker : BackgroundService
     {
         try
         {
-            var http = _httpClientFactory.CreateClient("gemini");
-            var gemini = new GeminiClient(http);
-
-            var answer = await gemini.GenerateAnswerAsync(
-                _options.GeminiTextModel,
-                _options.GeminiPersonaPrompt,
-                question,
-                _stoppingToken
-            );
-            var capped = AnswerFormatting.CapSentences(answer, 3);
-
-            var wav = await gemini.SynthesizeSpeechAsync(
-                _options.GeminiTtsModel,
-                _options.GeminiVoice,
-                capped,
-                _stoppingToken
-            );
+            // STATIC-AUDIO SHORT-CIRCUIT: while we burn no Gemini tokens, /askjaina ignores the
+            // question and plays a fixed bundled clip. The Gemini text+TTS path below is kept,
+            // commented, so re-enabling it is uncommenting this block and removing the static one.
+            // To restore AI: delete this block, uncomment the Gemini block, done.
+            var wavPath = Path.Combine(AppContext.BaseDirectory, "Algieba.wav");
+            var wav = await File.ReadAllBytesAsync(wavPath, _stoppingToken);
 
             await new VoicePlayback(_logger).PlayWavAsync(voiceChannel, wav, _stoppingToken);
 
-            await command.ModifyOriginalResponseAsync(response => response.Content = capped);
+            await command.ModifyOriginalResponseAsync(response =>
+                response.Content = "Here is Jaina."
+            );
+
+            // --- Gemini AI path (disabled while serving the static clip) ---
+            // var http = _httpClientFactory.CreateClient("gemini");
+            // var gemini = new GeminiClient(http);
+            //
+            // var answer = await GenerateAnswerWithFallbackAsync(gemini, question);
+            // var capped = AnswerFormatting.CapSentences(answer, 3);
+            //
+            // var wav = await SynthesizeSpeechWithFallbackAsync(gemini, capped);
+            //
+            // await new VoicePlayback(_logger).PlayWavAsync(voiceChannel, wav, _stoppingToken);
+            //
+            // await command.ModifyOriginalResponseAsync(response => response.Content = capped);
         }
         catch (OperationCanceledException) when (_stoppingToken.IsCancellationRequested) { }
         catch (Exception exception)
@@ -372,6 +376,99 @@ public sealed class Worker : BackgroundService
                 );
             }
         }
+    }
+
+    /// <summary>
+    /// Generates an answer, trying the primary text model then its two fallbacks in order. Rate
+    /// limits are per-model, so a throttled primary can still be answered by a fallback. Only the
+    /// last model's failure propagates if every model fails.
+    /// </summary>
+    private async Task<string> GenerateAnswerWithFallbackAsync(
+        GeminiClient gemini,
+        string question
+    )
+    {
+        var models = new[]
+        {
+            _options.GeminiTextModel,
+            _options.GeminiTextModelFallback1,
+            _options.GeminiTextModelFallback2,
+        };
+
+        return await TryModelsAsync(
+            models,
+            model =>
+                gemini.GenerateAnswerAsync(
+                    model,
+                    _options.GeminiPersonaPrompt,
+                    question,
+                    _stoppingToken
+                ),
+            "text"
+        );
+    }
+
+    /// <summary>
+    /// Synthesizes speech, trying the primary TTS model then its two fallbacks in order, with the
+    /// same per-model rate-limit rationale as <see cref="GenerateAnswerWithFallbackAsync"/>.
+    /// </summary>
+    private async Task<byte[]> SynthesizeSpeechWithFallbackAsync(GeminiClient gemini, string text)
+    {
+        var models = new[]
+        {
+            _options.GeminiTtsModel,
+            _options.GeminiTtsModelFallback1,
+            _options.GeminiTtsModelFallback2,
+        };
+
+        return await TryModelsAsync(
+            models,
+            model => gemini.SynthesizeSpeechAsync(model, _options.GeminiVoice, text, _stoppingToken),
+            "tts"
+        );
+    }
+
+    /// <summary>
+    /// Invokes <paramref name="call"/> for each model id in order, returning the first success.
+    /// A failed model is logged and the next is tried; if all fail, the last exception is rethrown.
+    /// Cancellation from the worker lifetime token is never swallowed.
+    /// </summary>
+    private async Task<T> TryModelsAsync<T>(
+        IReadOnlyList<string> models,
+        Func<string, Task<T>> call,
+        string kind
+    )
+    {
+        Exception? lastError = null;
+        foreach (var model in models)
+        {
+            if (string.IsNullOrWhiteSpace(model))
+            {
+                continue;
+            }
+
+            try
+            {
+                return await call(model);
+            }
+            catch (OperationCanceledException) when (_stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                lastError = exception;
+                _logger.LogWarning(
+                    exception,
+                    "Gemini {Kind} model {Model} failed; trying the next fallback",
+                    kind,
+                    model
+                );
+            }
+        }
+
+        throw lastError
+            ?? new InvalidOperationException($"No Gemini {kind} model was configured to try");
     }
 
     private async Task ClientReady()
