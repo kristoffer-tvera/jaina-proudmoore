@@ -63,10 +63,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /dnet
-# Clone the dev branch and check out the PINNED commit (not the moving dev HEAD),
-# verify we are on the expected commit, then apply the PR.
-RUN git clone --branch dev https://github.com/discord-net/Discord.Net.git . \
-    && git checkout bf159d412bb113a52354f73d9def4e5d540ba7fd \
+# Fetch ONLY the pinned dev commit, shallow (depth 1), rather than cloning dev's full
+# history. A full clone pulls the entire Discord.Net git history (hundreds of MB) just to
+# reach one commit, which is both slow and a disk-space risk on the build host. Fetching the
+# exact SHA at depth 1 lands the same tree in a few MB. Pinning the SHA (not the moving dev
+# HEAD) keeps the build reproducible.
+RUN git init -q . \
+    && git remote add origin https://github.com/discord-net/Discord.Net.git \
+    && git fetch --depth 1 origin bf159d412bb113a52354f73d9def4e5d540ba7fd \
+    && git checkout -q FETCH_HEAD \
     && test "$(git rev-parse HEAD)" = "bf159d412bb113a52354f73d9def4e5d540ba7fd"
 COPY patches/dave-pr-3288.patch /tmp/dave-pr-3288.patch
 RUN git apply --check /tmp/dave-pr-3288.patch && git apply /tmp/dave-pr-3288.patch
