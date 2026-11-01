@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using Discord;
 using Discord.WebSocket;
 using Microsoft.Extensions.Options;
@@ -26,10 +27,6 @@ public sealed class Worker : BackgroundService
             {
                 GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent,
                 MessageCacheSize = 1024,
-                // Discord enforces the DAVE (E2EE) protocol for voice as of 2026-03-01; without
-                // it the voice gateway closes with 4017. Discord.Net negotiates DAVE when this is
-                // enabled AND the native libdave.so is resolvable at runtime (see Dockerfile).
-                EnableVoiceDaveEncryption = true,
             }
         );
         _client.Log += ClientLog;
@@ -335,7 +332,7 @@ public sealed class Worker : BackgroundService
             var wavPath = Path.Combine(AppContext.BaseDirectory, "Algieba.wav");
             var wav = await File.ReadAllBytesAsync(wavPath, _stoppingToken);
 
-            await new VoicePlayback(_logger).PlayWavAsync(voiceChannel, wav, _stoppingToken);
+            await PlayViaSidecarAsync(command.GuildId!.Value, voiceChannel.Id, wav);
 
             await command.ModifyOriginalResponseAsync(response =>
                 response.Content = "Here is Jaina."
@@ -350,7 +347,7 @@ public sealed class Worker : BackgroundService
             //
             // var wav = await SynthesizeSpeechWithFallbackAsync(gemini, capped);
             //
-            // await new VoicePlayback(_logger).PlayWavAsync(voiceChannel, wav, _stoppingToken);
+            // await PlayViaSidecarAsync(command.GuildId!.Value, voiceChannel.Id, wav);
             //
             // await command.ModifyOriginalResponseAsync(response => response.Content = capped);
         }
@@ -376,6 +373,25 @@ public sealed class Worker : BackgroundService
                 );
             }
         }
+    }
+
+    /// <summary>
+    /// POSTs <paramref name="wav"/> to the voice sidecar's /play endpoint so it joins the caller's
+    /// voice channel and transmits the clip. Uses the injected "voice-sidecar" named HttpClient
+    /// (base URL + optional X-Sidecar-Token header configured in Program.cs). A non-success status
+    /// throws so the caller's catch surfaces the failure to the user.
+    /// </summary>
+    private async Task PlayViaSidecarAsync(ulong guildId, ulong channelId, byte[] wav)
+    {
+        var http = _httpClientFactory.CreateClient("voice-sidecar");
+        using var content = new ByteArrayContent(wav);
+        content.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+        using var response = await http.PostAsync(
+            $"/play?guildId={guildId}&channelId={channelId}",
+            content,
+            _stoppingToken
+        );
+        response.EnsureSuccessStatusCode();
     }
 
     /// <summary>

@@ -41,6 +41,23 @@ builder.Services.AddHttpClient(
     }
 );
 
+builder.Services.AddHttpClient(
+    "voice-sidecar",
+    (sp, http) =>
+    {
+        var opts = sp.GetRequiredService<IOptions<BotOptions>>().Value;
+        http.BaseAddress = new Uri(opts.SidecarBaseUrl);
+        http.Timeout = TimeSpan.FromSeconds(120);
+        if (!string.IsNullOrWhiteSpace(opts.SidecarToken))
+        {
+            http.DefaultRequestHeaders.TryAddWithoutValidation(
+                "X-Sidecar-Token",
+                opts.SidecarToken.Trim()
+            );
+        }
+    }
+);
+
 builder.Services.AddHostedService<Worker>();
 
 using var host = builder.Build();

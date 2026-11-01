@@ -8,6 +8,12 @@ public sealed class BotOptions
     public ulong AuditChannelId { get; set; } = 971060030923235378;
     public ulong ToggleRoleId { get; set; } = 710781184375914548;
 
+    // The voice sidecar's base URL and optional shared token. Reached by Docker container name on
+    // the shared network; no external port is published. Bound from Bot:SidecarBaseUrl /
+    // Bot:SidecarToken (env Bot__SidecarBaseUrl / Bot__SidecarToken).
+    public string SidecarBaseUrl { get; set; } = "http://jaina-voice-sidecar:8080";
+    public string SidecarToken { get; set; } = string.Empty;
+
     public string GeminiApiKey { get; set; } = string.Empty;
     public string GeminiVoice { get; set; } = "Kore";
 
