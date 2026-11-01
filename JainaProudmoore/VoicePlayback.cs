@@ -239,8 +239,15 @@ public sealed class VoicePlayback(ILogger logger)
             // disconnect:true is the verified default; passed explicitly for self-documentation.
             // ConnectAsync takes no CancellationToken, so it is not itself interruptible; the bounded
             // playback token (and thus ct) still gates the loop and the settle wait around it.
+            //
+            // selfDeaf:true because /askjaina is SEND-ONLY: Jaina transcodes a WAV and transmits it,
+            // and never consumes incoming audio. Joining deafened tells Discord not to send other
+            // members' voice packets, which stops Discord.Net from spinning up per-speaker DAVE
+            // receive-decode streams that spam "Failed to decrypt audio packet / DecryptionFailure"
+            // (the inbound E2EE decode path is unused here and flaky under DAVE). It has no effect on
+            // our outbound PCM stream.
             var client = await channel.ConnectAsync(
-                selfDeaf: false,
+                selfDeaf: true,
                 selfMute: false,
                 external: false,
                 disconnect: true
