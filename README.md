@@ -66,7 +66,8 @@ destination-channel access. Commands are registered globally when the bot is rea
   default permissions also require Move Members. Same-channel moves are rejected.
 - `/askjaina question`: Jaina answers out loud in your current voice channel. You
   must be connected to a voice channel in the server; otherwise the command replies
-  ephemerally asking you to join one.
+  ephemerally asking you to join one. The bot itself does not join voice — it POSTs
+  the answer audio to the voice sidecar, which joins, plays, and leaves (see below).
 
 ## Ask Jaina (Gemini Voice)
 
@@ -78,8 +79,9 @@ key.
 Each successful invocation makes two Gemini calls: one text request
 (`generateContent`) to answer in character, and one text-to-speech request to
 synthesize that answer. The answer is hard-capped to at most 2-3 short sentences
-(instructed in the persona prompt and enforced defensively in code). The bot joins
-your voice channel, speaks the answer, then leaves.
+(instructed in the persona prompt and enforced defensively in code). The bot then
+POSTs the synthesized WAV to the voice sidecar's `/play` endpoint; the sidecar joins
+your voice channel, speaks the answer, and leaves.
 
 Configuration keys (all optional, under the `Bot` section unless noted):
 
@@ -91,16 +93,29 @@ Configuration keys (all optional, under the `Bot` section unless noted):
 - `Bot:GeminiVoice`: the TTS voice (default `Kore`).
 - `Bot:GeminiTextModel`: the text model (default `gemini-2.5-flash`).
 - `Bot:GeminiTtsModel`: the TTS model (default `gemini-2.5-flash-preview-tts`).
+- `Bot:SidecarBaseUrl` (env `Bot__SidecarBaseUrl`): base URL of the voice sidecar
+  (default `http://jaina-voice-sidecar:8080`, the sidecar's container name on the
+  shared Docker network).
+- `Bot:SidecarToken` (env `Bot__SidecarToken`): optional shared secret sent as the
+  `X-Sidecar-Token` header; set it only when the sidecar's `SIDECAR_TOKEN` is set,
+  and it must match.
 
 The `gemini-3.8-flash` / `gemini-3.8-flash-tts` ids are documented opt-in overrides
 for accounts with 3.x model access; set the model keys above to use them.
 
 ### Native runtime dependencies
 
-Discord.Net voice needs native `libopus` and `libsodium`, and playback needs
-`ffmpeg` on `PATH`. These are installed in the container by the `Dockerfile`. If you
-run with `dotnet run` directly, the host must have `libopus`, `libsodium`, and
-`ffmpeg` available on `PATH` too.
+The bot no longer connects to Discord voice, so it needs **no** native voice
+libraries — `libopus`, `libsodium`, `ffmpeg`, and `libdave.so` are all gone from the
+bot image. It runs on stock Discord.Net 3.20.2.
+
+Voice playback for `/askjaina` is handled by the separate **voice sidecar** (see
+[`JainaVoiceSidecar/README.md`](JainaVoiceSidecar/README.md)), which bundles
+`ffmpeg` and `libdave.so` itself. The sidecar exists because Discord.Net could not
+reliably send audio under Discord's mandatory DAVE end-to-end encryption; the Go
+sidecar owns DAVE voice while the bot keeps the gateway and slash commands. The bot
+reaches it over HTTP (`Bot:SidecarBaseUrl`), so for `dotnet run` the sidecar must be
+running and reachable at that URL for `/askjaina` audio to play.
 
 Audit messages depend on the 1,024-message memory cache: messages not cached before
 an edit or deletion cannot be reconstructed. Audit output cannot trigger mentions.
@@ -108,8 +123,11 @@ Logs record user IDs, not DM bodies.
 
 ## Containers And Deployment
 
-The image runs as the .NET image's non-root user and logs to the console. A running
-container is not proof the Discord connection is healthy; inspect logs for connection
-and command-registration results. See [Unraid.md](Unraid.md) for the full deployment
-steps. There is no registry image and no push step: the container is built from the
-GitHub source directly on Unraid.
+Deployment is **two containers** on a shared Docker network: the bot
+(`jaina-proudmoore`) and the voice sidecar (`jaina-voice-sidecar`). The bot reaches
+the sidecar by container name; no ports are published. The bot image runs as the
+.NET image's non-root user and logs to the console. A running container is not proof
+the Discord connection is healthy; inspect logs for connection and
+command-registration results. See [Unraid.md](Unraid.md) for the full deployment
+steps. There is no registry image and no push step: both containers are built from
+the GitHub source directly on Unraid.

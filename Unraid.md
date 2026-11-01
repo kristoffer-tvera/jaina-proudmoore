@@ -1,47 +1,40 @@
 # Unraid Deployment
 
-This is the Jaina Proudmoore Discord worker. It is built from the GitHub source
-directly on Unraid over SSH, then run as a container configured through the Unraid
-Docker tab. Nothing is pushed to a registry.
+Jaina Proudmoore runs as **two containers** on Unraid:
 
-The bot provides role toggling (`/ilovechinesewomen`), voice-channel moves
-(`/yoink`), cached message edit/delete auditing, and the optional `/askjaina`
-Gemini voice command (answers aloud in your voice channel; requires a Gemini API
-key). The native deps `/askjaina` needs (ffmpeg, libopus, libsodium, and the DAVE
-E2EE library `libdave.so`) are baked into the image by the Dockerfile, so no extra
-Unraid configuration is required for them.
+- **`jaina-proudmoore`** — the .NET 10 Discord worker. It owns the gateway
+  connection and all slash commands (`/ilovechinesewomen`, `/yoink`, the audit
+  watchdog, and `/askjaina`). It no longer connects to voice itself.
+- **`jaina-voice-sidecar`** — a small Go send-only voice service. It owns Discord's
+  DAVE (end-to-end-encryption) voice path: the bot POSTs WAV bytes to it, and the
+  sidecar joins the voice channel, transmits the audio under DAVE, and leaves.
+
+Both images are built from the GitHub source directly on Unraid over SSH, then run
+as containers configured through the Unraid Docker tab. Nothing is pushed to a
+registry.
+
+**Why two containers?** Discord.Net could not reliably *send* audio under Discord's
+mandatory DAVE end-to-end encryption, so the Go sidecar (built on `disgoorg/disgo` +
+`disgoorg/godave`) owns DAVE voice while the bot keeps the gateway and slash
+commands. The bot hands the sidecar WAV bytes over HTTP and the sidecar does the
+voice work. See [`JainaVoiceSidecar/README.md`](JainaVoiceSidecar/README.md) for the
+sidecar's `/play` contract and the godave↔libdave version pairing.
+
+## Native runtime dependencies
+
+The split moves all the native voice dependencies into the sidecar image:
+
+- The **bot** image needs no native voice libraries anymore — no `ffmpeg`, no
+  `libopus`, no `libsodium`, no `libdave.so`. It runs on stock Discord.Net 3.20.2
+  from nuget.org.
+- The **sidecar** image bundles `ffmpeg` (WAV→PCM transcode) and the pinned
+  `libdave.so` (DAVE E2EE). Its Dockerfile installs both, so no extra Unraid
+  configuration is required for them.
 
 Because the repo is **private**, the build clones over SSH; set up a deploy key on
-the Unraid host first (see "SSH deploy key" below). Discord also enforces its DAVE
-end-to-end-encryption protocol for voice (since 2026-03-01), so the Dockerfile
-downloads a pinned prebuilt `libdave.so` and the bot sets
-`EnableVoiceDaveEncryption = true`; without both, voice connections are rejected
-with gateway close code `4017`.
-
-> **Temporary: patched Discord.Net (dev @ `bf159d41` + two local patches).** The image
-> currently builds Discord.Net **from source** at a pinned `dev`-branch commit
-> (`bf159d412bb113a52354f73d9def4e5d540ba7fd`) with **two** local patches applied on
-> top: approved-but-unmerged
-> [PR #3288](https://github.com/discord-net/Discord.Net/pull/3288)
-> (`dave-pr-3288.patch`, the DAVE welcome-roster / null-terminator fix) and a
-> FinishConnectAudio same-session guard (`dave-finishconnectaudio-guard.patch`) that
-> stops the benign second `VOICE_SERVER_UPDATE` from tearing down the already-connected
-> voice client — the defect that
-> [PR #2873](https://github.com/discord-net/Discord.Net/pull/2873) baked into `dev` and
-> that caused the ~7s `/askjaina` drop with a `TaskCanceledException`.
-> We build from `dev` (not the `3.20.2` release tag) because `dev` carries a batch of
-> DAVE voice fixes (RTP padding #3263, multi-user voice fixes, etc.) that the 3.20.2
-> release lacks, and `/askjaina` otherwise joins but is torn down ~7s in and/or plays
-> no audio with 2+ users present. PR #3288 is still open / not merged into `dev`, and
-> there is no upstream fix for the FinishConnectAudio teardown, so both patches are
-> still required. This adds a dedicated `discordnet` build stage to the
-> Dockerfile and a local NuGet feed (packed at `3.20.2`); the app's package reference
-> is unchanged. It is **temporary**, pending an upstream Discord.Net release that
-> ships these fixes. Everything is marked with the greppable comment `DAVE-PR-3288`.
-> See [`JainaProudmoore/patches/README.md`](JainaProudmoore/patches/README.md) for
-> what it is and the one-step cleanup. Because the build clones Discord.Net from
-> GitHub, the build host needs outbound HTTPS to github.com (it already does for the
-> libdave fetch).
+the Unraid host first (see "SSH deploy key" below). The build host needs outbound
+HTTPS to github.com (both images fetch from GitHub during build; the sidecar also
+downloads the pinned `libdave.so`).
 
 ## 0. SSH deploy key (one-time, private repo)
 
@@ -59,33 +52,78 @@ The repo is private, so the build must authenticate to GitHub. Unraid rebuilds
 2. Add the printed public key to the repo on GitHub under
    **Settings -> Deploy keys -> Add deploy key** (read-only access is enough).
 
+3. Verify: `ssh -T git@github.com` should report successful authentication.
 
-4. Verify: `ssh -T git@github.com` should report successful authentication.
+## 1. Build Both Images via SSH
 
-## 1. Build the Image via SSH
+Push the changes you want to deploy, then SSH into Unraid and build both images from
+the latest `master` commit. Clone once, then build each image from its subdirectory.
+Passing the git URL straight to `docker build` fails under BuildKit: the HTTPS URL
+has no credentials for the private repo, and the `git@` URL needs an SSH agent
+socket that isn't present. Cloning on the host uses the deploy key directly, and
+Docker only sees local files.
 
-Push the changes you want to deploy, then SSH into Unraid and build the worker from
-the latest `master` commit. Clone first, then build from the local path. Passing the
-git URL straight to `docker build` fails under BuildKit: the HTTPS URL has no
-credentials for the private repo, and the `git@` URL needs an SSH agent socket that
-isn't present. Cloning on the host uses the deploy key directly, and Docker only
-sees local files. The `Dockerfile` lives in the `JainaProudmoore` subdirectory, so
-that subdirectory is the build context:
+Each service has its own `Dockerfile` in its own subdirectory, so each subdirectory
+is its own build context — the bot from `JainaProudmoore`, the sidecar from
+`JainaVoiceSidecar`:
 
 ```bash
 rm -rf /tmp/jaina && git clone --depth 1 -b master git@github.com:kristoffer-tvera/jaina-proudmoore.git /tmp/jaina
 docker build --pull -t jaina-proudmoore /tmp/jaina/JainaProudmoore
+docker build --pull -t jaina-voice-sidecar /tmp/jaina/JainaVoiceSidecar
 ```
 
 This builds the checked-in source on `master`; unpushed local changes are not
 included.
 
-## 2. Add the Container in Unraid
+## 2. Shared Docker Network
+
+The bot reaches the sidecar by container name over a private Docker network — no
+ports are published to the host. Create a user-defined bridge network once and put
+both containers on it so Docker's embedded DNS resolves the sidecar's container name:
+
+```bash
+docker network create jaina-net
+```
+
+In the Unraid **Docker** tab, set each container's **Network Type** to `jaina-net`
+(it appears in the dropdown once created). With both on `jaina-net`, the bot reaches
+the sidecar at `http://jaina-voice-sidecar:8080`.
+
+## 3. Add the Sidecar Container in Unraid
 
 1. Open the **Docker** tab in Unraid.
 2. Click **Add Container**.
-3. Set **Name** to `JainaProudmoore`.
-4. Set **Repository** to `jaina-proudmoore`.
+3. Set **Name** to `jaina-voice-sidecar` (the name the bot uses to reach it — it
+   must match exactly).
+4. Set **Repository** to `jaina-voice-sidecar`.
+5. Set **Network Type** to `jaina-net`.
+6. Click **Apply**.
+
+Configure these environment variables:
+
+```text
+TOKEN=<Discord bot token>
+PORT=8080
+SIDECAR_TOKEN=<optional shared secret>
+```
+
+- `TOKEN` is the **same** Discord bot token as the bot uses — Discord permits a
+  second gateway connection for the same bot. Startup fails fast if it is missing.
+- `PORT` is optional (default `8080`); the server binds `0.0.0.0:$PORT`.
+- `SIDECAR_TOKEN` is optional. When set, `/play` requires a matching
+  `X-Sidecar-Token` header, so it **must equal** the bot's `Bot__SidecarToken`. Leave
+  both unset to run without the shared secret.
+
+Do not publish any ports: the sidecar is reached only by the bot over `jaina-net`,
+and it makes only outbound connections to Discord.
+
+## 4. Add the Bot Container in Unraid
+
+1. In the **Docker** tab, click **Add Container** again.
+2. Set **Name** to `JainaProudmoore`.
+3. Set **Repository** to `jaina-proudmoore`.
+4. Set **Network Type** to `jaina-net`.
 5. Click **Apply**.
 
 Configure these environment variables:
@@ -94,19 +132,29 @@ Configure these environment variables:
 TOKEN=<Discord bot token>
 DOTNET_ENVIRONMENT=Production
 GEMINI_API_KEY=<Gemini API key>
+Bot__SidecarBaseUrl=http://jaina-voice-sidecar:8080
+Bot__SidecarToken=<optional shared secret>
 ```
 
-`TOKEN` is required; startup fails if it is missing. `GEMINI_API_KEY` is
-**optional**: the container starts and all other commands work without it. Set it
-only to enable `/askjaina`. The audit channel and toggle role IDs default from
-`appsettings.json`; override them only if needed with `Bot__AuditChannelId` and
-`Bot__ToggleRoleId` (double underscore). Do not publish any ports: the bot makes
-only outbound connections to Discord.
+- `TOKEN` is required; startup fails if it is missing.
+- `GEMINI_API_KEY` is **optional**: the container starts and all other commands work
+  without it. Set it only to enable `/askjaina`.
+- `Bot__SidecarBaseUrl` points at the sidecar by its container name on `jaina-net`;
+  the default baked into the image is already `http://jaina-voice-sidecar:8080`, so
+  you only need to set it if you renamed the sidecar container or changed its port.
+- `Bot__SidecarToken` is optional and must equal the sidecar's `SIDECAR_TOKEN` when
+  that is set (double underscore maps to the `Bot:SidecarToken` config key).
 
-## 3. Update After Pushing New Code
+The audit channel and toggle role IDs default from `appsettings.json`; override them
+only if needed with `Bot__AuditChannelId` and `Bot__ToggleRoleId` (double
+underscore). Do not publish any ports: the bot makes only outbound connections to
+Discord and talks to the sidecar over `jaina-net`.
+
+## 5. Update After Pushing New Code
 
 When you push new code to GitHub:
 
-1. Re-run the build command over SSH to build the latest `master` source.
+1. Re-run the build commands over SSH (step 1) to build the latest `master` source.
+   Rebuild whichever image(s) changed — both share the same clone.
 2. In Unraid, open **Advanced View** (top right).
-3. Click **Force Update** on the container.
+3. Click **Force Update** on each container you rebuilt.
