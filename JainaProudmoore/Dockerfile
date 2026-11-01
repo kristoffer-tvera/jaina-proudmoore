@@ -85,7 +85,8 @@ RUN set -eux \
        dotnet pack "$proj" -c Release \
          /p:IsTagBuild=true \
          /p:TreatWarningsAsErrors=false \
-         /p:NoWarn="CS1591;NU1510" \
+         /p:GenerateDocumentationFile=false \
+         /p:NoWarn=CS1591%3BNU1510 \
          -o /packages ; \
      done
 # ==== DAVE-PR-3288 END ======================================================
