@@ -1,0 +1,40 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "id": "FEAT-001",
+      "area": "JainaVoiceSidecar (Go send-only DAVE voice sidecar)",
+      "status": "verified",
+      "confidence": "confirmed",
+      "notes": "Code matches recorded findings. main.go opens its own gateway with IntentGuildVoiceStates + golibdave DAVE session, never registers an OpusFrameReceiver (send-only). play.go joins self-deafened (Open(ctx,ch,false,true)), bounds every phase (open 20s, DAVE ready 15s, playback 2m, leave 10s, request 3m), always leaves via deferred conn.Close, and maps the godave #11 stage/v0-passthrough case to errDaveNotReady. server.go status mapping is correct (200/400/401/413/422/502/504) with a 25 MiB body cap and optional X-Sidecar-Token auth. opusprovider.go ffmpeg transcode + kazzmir/opus-go encode with zero-padded final frame, Close kills ffmpeg. go.mod pins (no floats): disgo master pseudo-version v0.19.7-0.20261101233420-18ac6df9b116 (DAVE() absent from v0.19.6 tag), godave/golibdave v0.3.0, native libdave v1.1.0 from release.txt. Fixer commit 19cf4de fixed the two real container-build breaks (missing dave.pc + header path -> install pkg-config, flatten dave.h, generate dave.pc, set PKG_CONFIG_PATH; and glibc/libstdc++ ABI -> move build+runtime to Debian trixie + libstdc++6) and verified via podman build + run (fails fast without TOKEN, libdave resolves via ldd, ffmpeg present). Local go build is CGO+libdave-gated per environment_constraints; container build is the authoritative link check, performed."
+    },
+    {
+      "id": "FEAT-002",
+      "area": "JainaProudmoore (.NET rewire to sidecar, removal of patched Discord.Net voice)",
+      "status": "verified",
+      "confidence": "confirmed",
+      "notes": "BotOptions.cs adds SidecarBaseUrl (default http://jaina-voice-sidecar:8080) + SidecarToken. Program.cs adds the 'voice-sidecar' named HttpClient (120s timeout, X-Sidecar-Token only when set) mirroring the gemini pattern. Worker.cs RunAskJainaAsync static-clip branch calls PlayViaSidecarAsync, which POSTs ByteArrayContent (audio/wav) to /play?guildId=&channelId= and EnsureSuccessStatusCode so failures hit the existing catch; the commented Gemini block differs only in the byte source. EnableVoiceDaveEncryption removed; GatewayIntents unchanged. VoicePlayback.cs and patches/ deleted; grep over source shows no VoicePlayback/IAudioClient/CreatePCMStream/DAVE-PR-3288/local-packages/EnableVoiceDaveEncryption references (only harmless historical comments in opusprovider.go). Bot Dockerfile stripped of the discordnet from-source stage and all native voice deps; keeps ca-certificates + non-root USER on stock Discord.Net 3.20.2. Algieba.wav (140730 bytes) is bundled via csproj CopyToOutputDirectory=PreserveNewest and is NOT excluded by .dockerignore, so AppContext.BaseDirectory resolves it in the container. Recorded: dotnet build -warnaserror warning-clean."
+    },
+    {
+      "id": "FEAT-003",
+      "area": "Repo-root docs (Unraid.md, README.md)",
+      "status": "verified",
+      "confidence": "confirmed",
+      "notes": "Unraid.md rewritten for two containers on a shared jaina-net network reached by container name, built from the JainaProudmoore and JainaVoiceSidecar subdirs via the clone-then-build SSH pattern, with no published ports. Env var names match FEAT-001 (TOKEN/PORT/SIDECAR_TOKEN) and FEAT-002 (Bot__SidecarBaseUrl/Bot__SidecarToken). All DAVE-PR-3288 / patched-Discord.Net references removed; the only libopus/libsodium mentions are explicit 'these are gone' statements. WHY paragraph explains the sidecar split. README.md native-deps and /askjaina sections updated and consistent."
+    },
+    {
+      "id": "TEST-ALIGNMENT",
+      "area": "JainaProudmoore.Tests/BotTests.cs",
+      "status": "verified",
+      "confidence": "confirmed",
+      "notes": "The previously flagged pre-existing failure (BotTests.GeminiDefaultsMatchExpected asserting gemini-2.5-* vs the user-set gemini-3.8-* in GeminiDefaults.cs) was resolved correctly by the fixer: the stale test assertions were aligned to the source-of-truth GeminiDefaults.cs (gemini-3.8-flash / gemini-3.8-flash-tts), and the model ids themselves were NOT changed. Recorded suite result is 14/14 passing."
+    },
+    {
+      "id": "NOTE-askjaina-gemini-guard",
+      "area": "JainaProudmoore/Worker.cs HandleSlashCommand (non-blocking observation)",
+      "status": "non-blocking",
+      "confidence": "confirmed",
+      "notes": "While the static-clip short-circuit is active, /askjaina still refuses to run when GEMINI_API_KEY is unset even though the static path never calls Gemini. This is an intentional holdover kept so that re-enabling the commented AI path is a pure uncomment, and it is documented behavior (Unraid.md notes GEMINI_API_KEY enables /askjaina). Not a blocker; flagged only for awareness if the static clip is meant to work key-less."
+    }
+  ]
+}

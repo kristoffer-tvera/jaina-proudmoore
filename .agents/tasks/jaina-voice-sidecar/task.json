@@ -1,0 +1,7 @@
+{
+  "task_id": "task-jaina-voice-sidecar",
+  "task_description": "Introduce a Go send-only voice sidecar (disgo+godave) so /askjaina plays audio under Discord's mandatory DAVE E2EE; rewire the .NET bot to POST WAV bytes to the sidecar over local HTTP; remove the fragile patched-from-source Discord.Net voice apparatus entirely; document the two-container deployment. Chosen path: Approach 3 / Choice C from .agents/tasks/fix-askjaina-voice/investigation-working-dave-approaches.md.",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003"],
+  "blocked_reason": null
+}
