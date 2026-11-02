@@ -30,8 +30,8 @@ public sealed class BotTests
         Assert.Equal("Kore", options.GeminiVoice);
         Assert.Equal(GeminiDefaults.TextModel, options.GeminiTextModel);
         Assert.Equal(GeminiDefaults.TtsModel, options.GeminiTtsModel);
-        Assert.Equal("gemini-2.5-flash", options.GeminiTextModel);
-        Assert.Equal("gemini-2.5-flash-preview-tts", options.GeminiTtsModel);
+        Assert.Equal("gemini-3.8-flash", options.GeminiTextModel);
+        Assert.Equal("gemini-3.8-flash-tts", options.GeminiTtsModel);
         Assert.False(string.IsNullOrWhiteSpace(options.GeminiPersonaPrompt));
     }
 }

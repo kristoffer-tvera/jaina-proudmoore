@@ -104,6 +104,19 @@ runtime image needs `libdave.so` on the loader path. The Dockerfile places it in
 runtime dependency is needed, but it is a glibc build — hence the Debian-slim
 runtime stage (not Alpine/musl).
 
+Two concrete requirements fall out of this and are baked into the Dockerfile:
+
+- **pkg-config.** godave's `libdave/lib.go` resolves the native library with
+  `#cgo pkg-config: dave` and `#include "dave.h"`. The libdave release zip ships no
+  `dave.pc`, so the build installs `pkg-config`, flattens `dave.h` directly onto the
+  include path, writes a `dave.pc` (mirroring godave's `scripts/libdave_install.sh`),
+  and sets `PKG_CONFIG_PATH=/usr/local/lib/pkgconfig` before `go build`.
+- **Debian trixie, not bookworm.** The prebuilt libdave `v1.1.0` BoringSSL `.so` is
+  built against **glibc ≥ 2.38** (`__isoc23_strto*`) and **libstdc++ `GLIBCXX_3.4.32`**
+  (`std::ios_base_library_init`). Bookworm (glibc 2.36 / GCC 12) fails to link and
+  load it; trixie (glibc 2.41 / GCC 14) satisfies both. The runtime stage installs
+  `libstdc++6` (libdave's C++ runtime; BoringSSL is static but the C++ stdlib is not).
+
 ## Build and run (container)
 
 ```bash
