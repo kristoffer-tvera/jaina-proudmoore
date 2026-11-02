@@ -329,27 +329,27 @@ public sealed class Worker : BackgroundService
             // question and plays a fixed bundled clip. The Gemini text+TTS path below is kept,
             // commented, so re-enabling it is uncommenting this block and removing the static one.
             // To restore AI: delete this block, uncomment the Gemini block, done.
-            var wavPath = Path.Combine(AppContext.BaseDirectory, "Algieba.wav");
-            var wav = await File.ReadAllBytesAsync(wavPath, _stoppingToken);
+            // var wavPath = Path.Combine(AppContext.BaseDirectory, "Algieba.wav");
+            // var wav = await File.ReadAllBytesAsync(wavPath, _stoppingToken);
 
-            await PlayViaSidecarAsync(command.GuildId!.Value, voiceChannel.Id, wav);
+            // await PlayViaSidecarAsync(command.GuildId!.Value, voiceChannel.Id, wav);
 
-            await command.ModifyOriginalResponseAsync(response =>
-                response.Content = "Here is Jaina."
-            );
+            // await command.ModifyOriginalResponseAsync(response =>
+            //     response.Content = "Here is Jaina."
+            // );
 
             // --- Gemini AI path (disabled while serving the static clip) ---
-            // var http = _httpClientFactory.CreateClient("gemini");
-            // var gemini = new GeminiClient(http);
-            //
-            // var answer = await GenerateAnswerWithFallbackAsync(gemini, question);
-            // var capped = AnswerFormatting.CapSentences(answer, 3);
-            //
-            // var wav = await SynthesizeSpeechWithFallbackAsync(gemini, capped);
-            //
-            // await PlayViaSidecarAsync(command.GuildId!.Value, voiceChannel.Id, wav);
-            //
-            // await command.ModifyOriginalResponseAsync(response => response.Content = capped);
+            var http = _httpClientFactory.CreateClient("gemini");
+            var gemini = new GeminiClient(http);
+            
+            var answer = await GenerateAnswerWithFallbackAsync(gemini, question);
+            var capped = AnswerFormatting.CapSentences(answer, 3);
+            
+            var wav = await SynthesizeSpeechWithFallbackAsync(gemini, capped);
+            
+            await PlayViaSidecarAsync(command.GuildId!.Value, voiceChannel.Id, wav);
+            
+            await command.ModifyOriginalResponseAsync(response => response.Content = capped);
         }
         catch (OperationCanceledException) when (_stoppingToken.IsCancellationRequested) { }
         catch (Exception exception)
