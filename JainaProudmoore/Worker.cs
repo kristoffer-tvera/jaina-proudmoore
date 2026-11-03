@@ -339,16 +339,30 @@ public sealed class Worker : BackgroundService
             // );
 
             // --- Gemini AI path (disabled while serving the static clip) ---
+            _logger.LogInformation(
+                "askjaina question from {User} ({UserId}): {Question}",
+                command.User.Username,
+                command.User.Id,
+                question
+            );
+
             var http = _httpClientFactory.CreateClient("gemini");
             var gemini = new GeminiClient(http);
-            
+
             var answer = await GenerateAnswerWithFallbackAsync(gemini, question);
             var capped = AnswerFormatting.CapSentences(answer, 3);
-            
+
+            _logger.LogInformation(
+                "askjaina answer for {User} ({UserId}): {Answer}",
+                command.User.Username,
+                command.User.Id,
+                capped
+            );
+
             var wav = await SynthesizeSpeechWithFallbackAsync(gemini, capped);
-            
+
             await PlayViaSidecarAsync(command.GuildId!.Value, voiceChannel.Id, wav);
-            
+
             await command.ModifyOriginalResponseAsync(response => response.Content = capped);
         }
         catch (OperationCanceledException) when (_stoppingToken.IsCancellationRequested) { }
