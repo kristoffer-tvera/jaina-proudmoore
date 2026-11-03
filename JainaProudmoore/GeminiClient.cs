@@ -45,10 +45,15 @@ public sealed class GeminiClient(HttpClient http)
             ct
         );
 
-        var text = payload
+        // Gemini 3.x returns multiple parts: reasoning parts (thought=true) first, then the
+        // answer. Skip thought parts and join the rest so we never surface a reasoning fragment
+        // (the "). Speak *as*" garbage) or drop a multi-part answer.
+        var answerParts = payload
             ?.Candidates?.FirstOrDefault()
-            ?.Content?.Parts?.FirstOrDefault(part => !string.IsNullOrEmpty(part.Text))
-            ?.Text;
+            ?.Content?.Parts?.Where(part => part.Thought != true && !string.IsNullOrEmpty(part.Text))
+            .Select(part => part.Text);
+
+        var text = answerParts is null ? null : string.Concat(answerParts).Trim();
 
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -122,7 +127,7 @@ public sealed class GeminiClient(HttpClient http)
                 Parts: [new TextPart(persona)]
             ),
             Contents: [new ContentPayload(Role: "user", Parts: [new TextPart(question)])],
-            GenerationConfig: new TextGenerationConfig(Temperature: 0.7, MaxOutputTokens: 160)
+            GenerationConfig: new TextGenerationConfig(Temperature: 0.7, MaxOutputTokens: 600)
         );
 
     /// <summary>
@@ -167,7 +172,13 @@ public sealed record ContentPayload(
     [property: JsonPropertyName("parts")] IReadOnlyList<TextPart> Parts
 );
 
-public sealed record TextPart([property: JsonPropertyName("text")] string Text);
+public sealed record TextPart(
+    [property: JsonPropertyName("text")] string Text,
+    // Gemini 3.x can return multiple parts per candidate: internal reasoning parts flagged
+    // thought=true, then the actual answer part(s). We must skip the thought parts when
+    // extracting the answer. Null on requests (ignored by WhenWritingNull), set on responses.
+    [property: JsonPropertyName("thought")] bool? Thought = null
+);
 
 public sealed record TextGenerationConfig(
     [property: JsonPropertyName("temperature")] double Temperature,
