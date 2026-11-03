@@ -21,8 +21,9 @@ public sealed class GeminiClient(HttpClient http)
     };
 
     /// <summary>
-    /// Asks Gemini the user's question, persona-constrained. Returns the raw answer text
-    /// (uncapped; the caller applies <see cref="AnswerFormatting.CapSentences"/>).
+    /// Asks Gemini the user's question, persona-constrained. Returns the full answer text as
+    /// returned by the model (joined across non-thought parts); length is governed by the persona
+    /// prompt and the output-token limit, not by any caller-side trimming.
     /// </summary>
     public async Task<string> GenerateAnswerAsync(
         string model,
@@ -127,7 +128,7 @@ public sealed class GeminiClient(HttpClient http)
                 Parts: [new TextPart(persona)]
             ),
             Contents: [new ContentPayload(Role: "user", Parts: [new TextPart(question)])],
-            GenerationConfig: new TextGenerationConfig(Temperature: 0.7, MaxOutputTokens: 600)
+            GenerationConfig: new TextGenerationConfig(Temperature: 0.7, MaxOutputTokens: 1200)
         );
 
     /// <summary>

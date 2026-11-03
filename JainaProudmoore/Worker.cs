@@ -350,9 +350,11 @@ public sealed class Worker : BackgroundService
             var gemini = new GeminiClient(http);
 
             var answer = await GenerateAnswerWithFallbackAsync(gemini, question);
-            // Generous upper bound: the prompt asks for 2-3 sentences, so 5 is a runaway guard,
-            // not a normal trim. A slightly verbose answer is fine; a cut-off one is not.
-            var capped = AnswerFormatting.CapSentences(answer, 5);
+
+            // No programmatic sentence trimming: length is controlled only by the prompt (which
+            // asks for 2-3 sentences). Trimming risked cutting a good answer mid-thought, which is
+            // worse than a slightly verbose one. The answer is spoken and shown exactly as returned.
+            var capped = answer.Trim();
 
             _logger.LogInformation(
                 "askjaina answer for {User} ({UserId}): {Answer}",
