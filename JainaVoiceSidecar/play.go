@@ -33,6 +33,14 @@ const (
 	// maxPlaybackTimeout caps a single playback so a wedged provider can never hold
 	// the voice connection open indefinitely.
 	maxPlaybackTimeout = 2 * time.Minute
+	// drainDelay is how long we keep the connection open AFTER the provider reports
+	// EOF, before leaving. The provider hitting io.EOF only means the last frame was
+	// PULLED, not that it has been transmitted and played out: disgo's AudioSender
+	// still needs to emit its 5 trailing silence frames (~100ms) and Discord's
+	// receiver jitter buffer needs to play out the last real frames. Leaving
+	// immediately on EOF cuts the audio off mid-sentence. This delay covers the
+	// silence frames plus playout slack so the tail is actually heard.
+	drainDelay = 1500 * time.Millisecond
 	// leaveTimeout bounds the voice leave on teardown.
 	leaveTimeout = 10 * time.Second
 )
@@ -87,12 +95,21 @@ func playWav(ctx context.Context, client *bot.Client, logger *slog.Logger, guild
 
 	conn.SetOpusFrameProvider(provider)
 
-	// Wait for the provider to reach EOF (playback complete) or the bounded
+	// Wait for the provider to reach EOF (all frames pulled) or the bounded
 	// playback timeout / request cancellation.
 	playCtx, playCancel := context.WithTimeout(ctx, maxPlaybackTimeout)
 	defer playCancel()
 	select {
 	case <-done:
+		// EOF means the last frame was PULLED, not played out. Hold the connection
+		// open for drainDelay so the AudioSender's trailing silence frames and
+		// Discord's jitter buffer can play out the tail before the deferred
+		// conn.Close() leaves the channel. Still honour request cancellation.
+		logger.Info("playback drained; holding briefly before leaving", slog.Duration("drain", drainDelay))
+		select {
+		case <-time.After(drainDelay):
+		case <-ctx.Done():
+		}
 		logger.Info("playback complete")
 		return nil
 	case <-playCtx.Done():
